@@ -27,7 +27,7 @@ flags.DEFINE_integer('early_stopping', 10, 'Tolerance for early stopping (# of e
 flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 flags.DEFINE_integer('sub_num', 15, 'Number of subgraphs')
 flags.DEFINE_integer("inner_loop", 5, 'Number of loops inside the subgraph')
-flags.DEFINE_integer("inter_loop", 1, 'Number of loops between different subgraphs')
+flags.DEFINE_integer("inter_loop", 2, 'Number of loops between different subgraphs')
 flags.DEFINE_integer('node_num', 2708, 'Number of nodes')
 # Load data
 adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask, labels = load_data(FLAGS.dataset)
@@ -53,7 +53,7 @@ else:
 genMETIS(support)
 '''
 
-sub_mask, sub_graphs, test_mask = loadGraph(FLAGS.sub_num, support)
+sub_mask, sub_graphs, test_mask, train_mask = loadGraph(FLAGS.sub_num, support)
 y_test = np.zeros(labels.shape)
 y_test[test_mask, :] = labels[test_mask, :]
 
@@ -134,6 +134,8 @@ print("Test set results:", "cost=", "{:.5f}".format(test_cost),
 for epoch in range(FLAGS.epochs):
     t = time.time()
     for i in range(FLAGS.sub_num):
+        sync_train = np.zeros(labels.shape)
+        sync_train[train_mask, :] = labels[train_mask, :]
         sub_train = np.zeros(labels.shape)
         sub_train[sub_mask[i], :] = labels[sub_mask[i], :]
         inter_support = []
@@ -152,27 +154,23 @@ for epoch in range(FLAGS.epochs):
         con_support = [(np.array(con_edge), np.array(con_weight), (FLAGS.node_num, FLAGS.node_num))]
         self_support = [sub_support[i][i]]
         # Inner loop
-        '''
+
         for loop in range(FLAGS.inner_loop):
             feed_dict = construct_feed_dict(features, self_support, sub_train, sub_mask[i], placeholders)
             feed_dict.update({placeholders['dropout']: FLAGS.dropout})
             # Training step
             outs1 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
-        '''
+
         # Inter loop
-        for _ in range(FLAGS.inter_loop):
-            feed_dict = construct_feed_dict(features, con_support, sub_train, sub_mask[i], placeholders)
-            feed_dict.update({placeholders['dropout']: FLAGS.dropout})
-            # Training step
-            if i == 0:
-                a = sess.graph.get_tensor_by_name('gcn/graphconvolution_2_vars/weights_0:0')
-                v = sess.run(a)
-                print(v)
-            outs2 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
+    for _ in range(FLAGS.inter_loop):
+        feed_dict = construct_feed_dict(features, support, sync_train, train_mask, placeholders)
+        feed_dict.update({placeholders['dropout']: FLAGS.dropout})
+        # Training step
+        outs2 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
     print("Inter, ", "Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs2[1]),
               "train_acc=", "{:.5f}".format(outs2[2]), "time=", "{:.5f}".format(time.time() - t))
-   # print("Inner, ", "Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs1[1]),
-         #       "train_acc=", "{:.5f}".format(outs1[2]), "time=", "{:.5f}".format(time.time() - t))
+    print("Inner, ", "Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs1[1]),
+                "train_acc=", "{:.5f}".format(outs1[2]), "time=", "{:.5f}".format(time.time() - t))
 
 test_cost, test_acc, test_duration = evaluate(features, support, y_test, test_mask, placeholders)
 print("Test set results:", "cost=", "{:.5f}".format(test_cost),

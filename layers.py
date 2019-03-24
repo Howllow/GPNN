@@ -31,7 +31,6 @@ def dot(x, y, sparse=False):
     """Wrapper for tf.matmul (sparse vs dense)."""
     if sparse:
         res = tf.sparse_tensor_dense_matmul(x, y)
-        print(res)
     else:
         res = tf.matmul(x, y)
     return res

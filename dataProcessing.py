@@ -47,6 +47,7 @@ def loadGraph(sub_num, support):
     sub_mask = []
     sub_train = []
     test_indices = []
+    train_indices = []
     for i in range(sub_num):
         sub_graphs.append([])
         sub_train.append([])
@@ -58,12 +59,14 @@ def loadGraph(sub_num, support):
         for j in range(len(sub_graphs[i])):
             if j < len(sub_graphs[i]) - train_num:
                 sub_train[i].append(sub_graphs[i][j])
+                train_indices.append(sub_graphs[i][j])
             else:
                 test_indices.append(sub_graphs[i][j])
     for i in range(sub_num):
         sub_mask.append(sample_mask(sub_train[i], support[0][2][0]))
     test_mask = sample_mask(test_indices, support[0][2][0])
-    return sub_mask, sub_graphs, test_mask
+    train_mask = sample_mask(train_indices, support[0][2][0])
+    return sub_mask, sub_graphs, test_mask, train_mask
 
 
 def saveSubSupport(support, sub_num, sub_graphs):
