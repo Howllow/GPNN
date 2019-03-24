@@ -1,4 +1,4 @@
-from gcn.inits import *
+from inits import *
 import tensorflow as tf
 
 flags = tf.app.flags
@@ -31,6 +31,7 @@ def dot(x, y, sparse=False):
     """Wrapper for tf.matmul (sparse vs dense)."""
     if sparse:
         res = tf.sparse_tensor_dense_matmul(x, y)
+        print(res)
     else:
         res = tf.matmul(x, y)
     return res
@@ -135,18 +136,15 @@ class GraphConvolution(Layer):
                  sparse_inputs=False, act=tf.nn.relu, bias=False,
                  featureless=False, **kwargs):
         super(GraphConvolution, self).__init__(**kwargs)
-
         if dropout:
             self.dropout = placeholders['dropout']
         else:
             self.dropout = 0.
-
         self.act = act
         self.support = placeholders['support']
         self.sparse_inputs = sparse_inputs
         self.featureless = featureless
         self.bias = bias
-
         # helper variable for sparse dropout
         self.num_features_nonzero = placeholders['num_features_nonzero']
 
@@ -162,7 +160,6 @@ class GraphConvolution(Layer):
 
     def _call(self, inputs):
         x = inputs
-
         # dropout
         if self.sparse_inputs:
             x = sparse_dropout(x, 1-self.dropout, self.num_features_nonzero)
@@ -173,14 +170,12 @@ class GraphConvolution(Layer):
         supports = list()
         for i in range(len(self.support)):
             if not self.featureless:
-                pre_sup = dot(x, self.vars['weights_' + str(i)],
-                              sparse=self.sparse_inputs)
+                pre_sup = dot(x, self.vars['weights_' + str(i)], sparse=self.sparse_inputs)
             else:
                 pre_sup = self.vars['weights_' + str(i)]
             support = dot(self.support[i], pre_sup, sparse=True)
             supports.append(support)
         output = tf.add_n(supports)
-
         # bias
         if self.bias:
             output += self.vars['bias']

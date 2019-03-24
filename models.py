@@ -1,5 +1,5 @@
-from gcn.layers import *
-from gcn.metrics import *
+from layers import *
+from metrics import *
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -138,7 +138,6 @@ class GCN(Model):
         # self.input_dim = self.inputs.get_shape().as_list()[1]  # To be supported in future Tensorflow versions
         self.output_dim = placeholders['labels'].get_shape().as_list()[1]
         self.placeholders = placeholders
-
         self.optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
 
         self.build()
@@ -157,7 +156,6 @@ class GCN(Model):
                                         self.placeholders['labels_mask'])
 
     def _build(self):
-
         self.layers.append(GraphConvolution(input_dim=self.input_dim,
                                             output_dim=FLAGS.hidden1,
                                             placeholders=self.placeholders,
