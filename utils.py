@@ -34,7 +34,7 @@ def load_data(dataset_str):
     ind.dataset_str.ally => the labels for instances in ind.dataset_str.allx as numpy.ndarray object;
     ind.dataset_str.graph => a dict in the format {index: [index_of_neighbor_nodes]} as collections.defaultdict
         object;
-    ind.dataset_str.test.index => the indices of test instances in graph, for the inductive setting as list object.
+    ind.dataset_str.test.index => the indices of test instances in cora, for the inductive setting as list object.
 
     All objects above must be saved using python pickle module.
 
@@ -55,7 +55,7 @@ def load_data(dataset_str):
     test_idx_range = np.sort(test_idx_reorder)
 
     if dataset_str == 'citeseer':
-        # Fix citeseer dataset (there are some isolated nodes in the graph)
+        # Fix citeseer dataset (there are some isolated nodes in the cora)
         # Find isolated nodes, add them as zero-vecs into the right position
         test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
         tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))

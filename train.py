@@ -16,19 +16,20 @@ tf.set_random_seed(seed)
 # Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_string('dataset', 'cora', 'Dataset string.')  # 'cora', 'citeseer', 'pubmed'
+flags.DEFINE_string('dataset', 'pubmed', 'Dataset string.')  # 'cora', 'citeseer', 'pubmed'
 flags.DEFINE_string('model', 'gcn', 'Model string.')  # 'gcn', 'gcn_cheby', 'dense'
 flags.DEFINE_float('learning_rate', 0.01, 'Initial learning rate.')
-flags.DEFINE_integer('epochs', 10, 'Number of epochs to train.')
+flags.DEFINE_integer('epochs', 280, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 16, 'Number of units in hidden layer 1.')
 flags.DEFINE_float('dropout', 0.5, 'Dropout rate (1 - keep probability).')
 flags.DEFINE_float('weight_decay', 5e-4, 'Weight for L2 loss on embedding matrix.')
 flags.DEFINE_integer('early_stopping', 10, 'Tolerance for early stopping (# of epochs).')
 flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
-flags.DEFINE_integer('sub_num', 15, 'Number of subgraphs')
-flags.DEFINE_integer("inner_loop", 5, 'Number of loops inside the subgraph')
-flags.DEFINE_integer("inter_loop", 2, 'Number of loops between different subgraphs')
-flags.DEFINE_integer('node_num', 2708, 'Number of nodes')
+flags.DEFINE_integer('sub_num', 4, 'Number of subgraphs')
+flags.DEFINE_integer("inner_loop", 4, 'Number of loops inside the subgraph')
+flags.DEFINE_integer("inter_loop", 1, 'Number of loops between different subgraphs')
+flags.DEFINE_integer('train_method', 1, '0 stands for sub, 1 stands for classic')
+
 # Load data
 adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask, labels = load_data(FLAGS.dataset)
 # Some preprocessing
@@ -49,25 +50,25 @@ elif FLAGS.model == 'dense':
 else:
     raise ValueError('Invalid argument for model: ' + str(FLAGS.model))
 
-'''
-genMETIS(support)
-'''
+#genMETIS(FLAGS.dataset, support)
 
-sub_mask, sub_graphs, test_mask, train_mask = loadGraph(FLAGS.sub_num, support)
+sub_mask, sub_graphs, test_mask, train_mask, sub_reorder = loadGraph(FLAGS.dataset, FLAGS.sub_num, support)
+relabels = np.array([labels[i] for i in sub_reorder])
+#reorder_sup_feat(FLAGS.dataset, FLAGS.sub_num, support, features, sub_reorder)
+m = open(str(FLAGS.sub_num) + '.' + FLAGS.dataset +'.reorder_res.pkl', 'rb')
+reorder_list = pickle.load(m)
+refeatures = reorder_list[1]
+resupport = reorder_list[0]
 y_test = np.zeros(labels.shape)
 y_test[test_mask, :] = labels[test_mask, :]
 
-#saveSubSupport(support, FLAGS.sub_num, sub_graphs)
+
+#saveInnerSupport(FLAGS.dataset, support, FLAGS.sub_num, sub_graphs)
 
 
-x = open(str(FLAGS.sub_num) + '.sub_support.pkl', 'rb')
-sub_support = pickle.load(x)
-'''
-for i in range(FLAGS.sub_num):
-    for j in range(FLAGS.sub_num):
-        if len(sub_support[i][j][0]) == 0:
-            sub_support[i][j] = (np.array([]), np.array([]), (2708, 2708))
-'''
+x = open(str(FLAGS.sub_num) + '.' + FLAGS.dataset + '.inner_support.pkl', 'rb')
+inner_support = pickle.load(x)
+
 # Define placeholders
 placeholders = {
     'support': [tf.sparse_placeholder(tf.float32)],
@@ -130,48 +131,48 @@ print("Test set results:", "cost=", "{:.5f}".format(test_cost),
       "accuracy=", "{:.5f}".format(test_acc), "time=", "{:.5f}".format(test_duration) )
 '''
 
-# Train model using subgraphs
-for epoch in range(FLAGS.epochs):
-    t = time.time()
-    for i in range(FLAGS.sub_num):
-        sync_train = np.zeros(labels.shape)
-        sync_train[train_mask, :] = labels[train_mask, :]
-        sub_train = np.zeros(labels.shape)
-        sub_train[sub_mask[i], :] = labels[sub_mask[i], :]
-        inter_support = []
-        for x in range(FLAGS.sub_num):
-            if x != i:
-                inter_support.append(sub_support[x][i])
-        con_edge = []
-        con_weight = []
-        for tmp_sup in inter_support:
-            edge_nodes = tmp_sup[0]
-            edge_weight = tmp_sup[1]
-            for edge in edge_nodes:
-                con_edge.append(edge)
-            for w in edge_weight:
-                con_weight.append(w)
-        con_support = [(np.array(con_edge), np.array(con_weight), (FLAGS.node_num, FLAGS.node_num))]
-        self_support = [sub_support[i][i]]
-        # Inner loop
+label_train = np.zeros(labels.shape)
+label_train[train_mask, :] = labels[train_mask, :]
 
+if FLAGS.train_method == 0:
+    # Train model using subgraphs
+    iters = FLAGS.epochs
+    while iters > 0:
+        t = time.time()
+
+        # Inner loop
         for loop in range(FLAGS.inner_loop):
-            feed_dict = construct_feed_dict(features, self_support, sub_train, sub_mask[i], placeholders)
+            iters = iters - 1
+            feed_dict = construct_feed_dict(features, inner_support, label_train, train_mask, placeholders)
             feed_dict.update({placeholders['dropout']: FLAGS.dropout})
             # Training step
             outs1 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
-
         # Inter loop
-    for _ in range(FLAGS.inter_loop):
-        feed_dict = construct_feed_dict(features, support, sync_train, train_mask, placeholders)
+        for _ in range(FLAGS.inter_loop):
+            iters = iters - 1
+            feed_dict = construct_feed_dict(features, support, label_train, train_mask, placeholders)
+            feed_dict.update({placeholders['dropout']: FLAGS.dropout})
+            # Training step
+            outs2 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
+
+        print("Sub, ", "Iterations:", '%04d' % (FLAGS.epochs - iters), "train_loss=", "{:.5f}".format(outs2[1]),
+                  "train_acc=", "{:.5f}".format(outs2[2]), "time=", "{:.5f}".format(time.time() - t))
+
+    test_cost, test_acc, test_duration = evaluate(features, support, y_test, test_mask, placeholders)
+    print("Test set results:", "cost=", "{:.5f}".format(test_cost),
+              "accuracy=", "{:.5f}".format(test_acc), "time=", "{:.5f}".format(test_duration))
+
+else:
+    for epoch in range(FLAGS.epochs):
+        t = time.time()
+        feed_dict = construct_feed_dict(features, support, label_train, train_mask, placeholders)
         feed_dict.update({placeholders['dropout']: FLAGS.dropout})
         # Training step
-        outs2 = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
-    print("Inter, ", "Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs2[1]),
-              "train_acc=", "{:.5f}".format(outs2[2]), "time=", "{:.5f}".format(time.time() - t))
-    print("Inner, ", "Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs1[1]),
-                "train_acc=", "{:.5f}".format(outs1[2]), "time=", "{:.5f}".format(time.time() - t))
+        outs = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
+        if (epoch + 1) % 5 == 0:
+            print("Classic, ", "Iterations:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs[1]),
+              "train_acc=", "{:.5f}".format(outs[2]), "time=", "{:.5f}".format(time.time() - t))
 
-test_cost, test_acc, test_duration = evaluate(features, support, y_test, test_mask, placeholders)
-print("Test set results:", "cost=", "{:.5f}".format(test_cost),
-          "accuracy=", "{:.5f}".format(test_acc), "time=", "{:.5f}".format(test_duration))
+    test_cost, test_acc, test_duration = evaluate(features, support, y_test, test_mask, placeholders)
+    print("Test set results:", "cost=", "{:.5f}".format(test_cost),
+              "accuracy=", "{:.5f}".format(test_acc), "time=", "{:.5f}".format(test_duration))
